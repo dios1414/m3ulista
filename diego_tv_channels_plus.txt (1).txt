@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DG TV</title>
+
+<!-- Soporte HLS para flujos .m3u8 -->
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: #000;
+    color: white;
+    font-family: Arial, sans-serif;
+}
+
+header {
+    background: #111;
+    padding: 18px;
+    text-align: center;
+    border-bottom: 3px solid red;
+}
+
+header h1 {
+    margin: 0;
+    color: red;
+    font-size: 32px;
+}
+
+.container {
+    padding: 25px;
+    max-width: 1400px;
+    margin: auto;
+}
+
+h2 {
+    color: red;
+    margin: 15px 0;
+}
+
+#estado {
+    text-align: center;
+    color: #aaa;
+    padding: 15px;
+    font-size: 18px;
+}
+
+.filtros {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 25px;
+    flex-wrap: wrap;
+}
+
+#busqueda, #categoria {
+    padding: 15px;
+    background: #151515;
+    color: white;
+    border: 2px solid #333;
+    border-radius: 8px;
+    font-size: 18px;
+    outline: none;
+}
+
+#busqueda {
+    flex: 2;
+    min-width: 200px;
+}
+
+#categoria {
+    flex: 1;
+    min-width: 180px;
+}
+
+#busqueda:focus, #categoria:focus {
+    border-color: #00bfff;
+    box-shadow: 0 0 12px #00bfff;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 18px;
+}
+
+.card {
+    min-height: 130px;
+    background: #151515;
+    border: 2px solid #333;
+    border-radius: 10px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    cursor: pointer;
+    outline: none;
+    transition: 0.15s;
+}
+
+.card:focus {
+    border: 3px solid #00bfff;
+    box-shadow: 0 0 18px #00bfff;
+    transform: scale(1.04);
+}
+
+.card:hover {
+    border-color: #00bfff;
+}
+
+.card img {
+    width: 80px;
+    height: 60px;
+    object-fit: contain;
+    margin-bottom: 8px;
+}
+
+.nombre {
+    font-size: 17px;
+    font-weight: bold;
+}
+
+#player {
+    display: none;
+    margin-top: 25px;
+    background: #111;
+    padding: 15px;
+    border-radius: 10px;
+    border: 2px solid #333;
+}
+
+#tituloPlayer {
+    color: red;
+    margin-top: 0;
+}
+
+video {
+    width: 100%;
+    max-height: 600px;
+    background: #000;
+    border-radius: 8px;
+}
+
+#volver {
+    margin-top: 15px;
+    padding: 15px 30px;
+    background: red;
+    color: white;
+    border: 0;
+    border-radius: 8px;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    outline: none;
+}
+
+#volver:focus {
+    border: 3px solid #00bfff;
+    box-shadow: 0 0 15px #00bfff;
+}
+
+#error {
+    display: none;
+    text-align: center;
+    background: #220000;
+    border: 1px solid red;
+    padding: 20px;
+    margin-top: 20px;
+    border-radius: 8px;
+}
+
+footer {
+    text-align: center;
+    padding: 30px;
+    color: #666;
+}
+
+@media (max-width: 600px) {
+    .container {
+        padding: 15px;
+    }
+    .grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+    .card {
+        min-height: 105px;
+    }
+    .card img {
+        width: 60px;
+        height: 45px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>DG TV</h1>
+</header>
+
+<div class="container">
+    <h2>📺 TV EN VIVO</h2>
+
+    <div class="filtros">
+        <input id="busqueda" type="text" placeholder="🔎 Buscar canal..." autocomplete="off">
+        <select id="categoria">
+            <option value="">Todas las categorías</option>
+        </select>
+    </div>
+
+    <div id="estado">Cargando lista M3U...</div>
+
+    <div id="canales" class="grid"></div>
+
+    <div id="error"></div>
+
+    <!-- REPRODUCTOR -->
+    <div id="player">
+        <h2 id="tituloPlayer">Reproduciendo</h2>
+        <video id="video" controls playsinline></video>
+        <br>
+        <button id="volver" tabindex="0">◀ VOLVER</button>
+    </div>
+</div>
+
+<footer>
+    DG TV
+</footer>
+
+<script>
+const M3U_URL = "https://bit.ly/4ydeAZ8";
+
+let canales = [];
+let hlsInstance = null;
+
+async function cargarLista() {
+    const estado = document.getElementById("estado");
+    try {
+        const respuesta = await fetch(M3U_URL);
+        if (!respuesta.ok) throw new Error("No se pudo descargar la lista");
+
+        const texto = await respuesta.text();
+        canales = analizarM3U(texto);
+
+        poblarCategorias(canales);
+        mostrarCanales(canales);
+
+        estado.textContent = "Canales disponibles: " + canales.length;
+    } catch (error) {
+        console.error(error);
+        estado.textContent = "No se pudo cargar la lista.";
+        const mensaje = document.getElementById("error");
+        mensaje.style.display = "block";
+        mensaje.innerHTML =
+            "⚠️ No se pudo acceder a la lista M3U.<br><br>" +
+            "Si la URL funciona en un reproductor pero no aquí, " +
+            "probablemente el servidor no permite solicitudes CORS.";
+    }
+}
+
+function analizarM3U(texto) {
+    const lineas = texto.split(/\r?\n/);
+    const resultado = [];
+    let informacion = null;
+
+    for (let i = 0; i < lineas.length; i++) {
+        const linea = lineas[i].trim();
+
+        if (linea.startsWith("#EXTINF")) {
+            informacion = {
+                nombre: obtenerNombre(linea),
+                logo: obtenerAtributo(linea, "tvg-logo"),
+                grupo: obtenerAtributo(linea, "group-title") || "Sin Categoría"
+            };
+        } else if (linea && !linea.startsWith("#") && informacion) {
+            resultado.push({
+                nombre: informacion.nombre,
+                logo: informacion.logo,
+                grupo: informacion.grupo,
+                url: linea
+            });
+            informacion = null;
+        }
+    }
+    return resultado;
+}
+
+function obtenerNombre(linea) {
+    const posicion = linea.lastIndexOf(",");
+    return posicion === -1 ? "Canal" : linea.substring(posicion + 1).trim();
+}
+
+function obtenerAtributo(linea, atributo) {
+    const expresion = new RegExp(atributo + '="([^"]*)"', "i");
+    const resultado = linea.match(expresion);
+    return resultado ? resultado[1] : "";
+}
+
+function poblarCategorias(lista) {
+    const selector = document.getElementById("categoria");
+    const grupos = [...new Set(lista.map(c => c.grupo))].sort();
+
+    grupos.forEach(grupo => {
+        const op = document.createElement("option");
+        op.value = grupo;
+        op.textContent = grupo;
+        selector.appendChild(op);
+    });
+}
+
+function mostrarCanales(lista) {
+    const contenedor = document.getElementById("canales");
+    contenedor.innerHTML = "";
+
+    lista.forEach(function(canal) {
+        const tarjeta = document.createElement("div");
+        tarjeta.className = "card";
+        tarjeta.tabIndex = 0;
+
+        if (canal.logo) {
+            const imagen = document.createElement("img");
+            imagen.src = canal.logo;
+            imagen.alt = "";
+            imagen.onerror = function() { this.style.display = "none"; };
+            tarjeta.appendChild(imagen);
+        }
+
+        const nombre = document.createElement("div");
+        nombre.className = "nombre";
+        nombre.textContent = canal.nombre;
+        tarjeta.appendChild(nombre);
+
+        tarjeta.onclick = function() {
+            reproducir(canal.url, canal.nombre);
+        };
+
+        // Activar con la tecla Enter / OK del control remoto
+        tarjeta.onkeydown = function(e) {
+            if (e.key === "Enter") {
+                reproducir(canal.url, canal.nombre);
+            }
+        };
+
+        contenedor.appendChild(tarjeta);
+    });
+}
+
+function reproducir(url, nombre) {
+    const player = document.getElementById("player");
+    const video = document.getElementById("video");
+    const titulo = document.getElementById("tituloPlayer");
+
+    titulo.textContent = "📺 " + nombre;
+    player.style.display = "block";
+
+    // Limpiar instancia anterior de HLS si existe
+    if (hlsInstance) {
+        hlsInstance.destroy();
+        hlsInstance = null;
+    }
+
+    // Soporte reproducción HLS (.m3u8)
+    if (Hls.isSupported() && url.includes(".m3u8")) {
+        hlsInstance = new Hls();
+        hlsInstance.loadSource(url);
+        hlsInstance.attachMedia(video);
+        hlsInstance.on(Hls.Events.MANIFEST_PARSED, function() {
+            video.play();
+        });
+    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        // Soporte nativo (Safari / iOS)
+        video.src = url;
+        video.play();
+    } else {
+        video.src = url;
+        video.play().catch(err => console.log("Error al reproducir fuente directa", err));
+    }
+
+    player.scrollIntoView({ behavior: "smooth" });
+    setTimeout(() => document.getElementById("volver").focus(), 300);
+}
+
+function cerrarPlayer() {
+    const video = document.getElementById("video");
+    
+    video.pause();
+    if (hlsInstance) {
+        hlsInstance.destroy();
+        hlsInstance = null;
+    }
+    video.removeAttribute("src");
+    video.load();
+
+    document.getElementById("player").style.display = "none";
+
+    const primera = document.querySelector(".card");
+    if (primera) primera.focus();
+}
+
+document.getElementById("volver").onclick = cerrarPlayer;
+
+// Filtrado combinado (Buscador + Categoría)
+function filtrar() {
+    const texto = document.getElementById("busqueda").value.toLowerCase().trim();
+    const categoria = document.getElementById("categoria").value;
+
+    const filtrados = canales.filter(canal => {
+        const coincideNombre = canal.nombre.toLowerCase().includes(texto);
+        const coincideGrupo = categoria === "" || canal.grupo === categoria;
+        return coincideNombre && coincideGrupo;
+    });
+
+    mostrarCanales(filtrados);
+}
+
+document.getElementById("busqueda").addEventListener("input", filtrar);
+document.getElementById("categoria").addEventListener("change", filtrar);
+
+// Botón ATRÁS / ESC / Teclas Smart TV
+document.addEventListener("keydown", function(event) {
+    if (event.key === "Escape" || event.key === "BrowserBack" || event.keyCode === 10009 || event.keyCode === 461) {
+        const player = document.getElementById("player");
+        if (player.style.display === "block") {
+            cerrarPlayer();
+            event.preventDefault();
+        }
+    }
+});
+
+window.onload = cargarLista;
+</script>
+
+</body>
+</html>
+
